@@ -92,5 +92,5 @@ This project is a **simulation-based smart power quality analyzer** that:
 
 ### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/<your-repo-link>.git
-cd <your-project-folder>
+git clone https://github.com/gobinda789/protobytes-2.0-team-ARC-AEES
+cd Smart_PQ_AI
