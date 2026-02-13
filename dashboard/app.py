@@ -1,9 +1,10 @@
-"""Streamlit dashboard for Smart PQ AI (Simulation Only)."""
+"""Streamlit dashboard for Smart PQ AI."""
 
 from __future__ import annotations
 
 import os
 import numpy as np
+import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 
@@ -15,11 +16,11 @@ from signal_processing.disturbances import (
     apply_harmonic_injection,
     apply_frequency_deviation,
 )
-from signal_processing.fft_analysis import compute_spectrum, thd_percent, harmonic_magnitudes
-from signal_processing.pq_parameters import rms, active_power, apparent_power, power_factor, crest_factor
+from signal_processing.fft_analysis import compute_spectrum, thd_percent, harmonic_magnitudes, estimate_frequency
+from signal_processing.pq_parameters import rms, active_power, apparent_power, power_factor, crest_factor, calculate_sag_swell_fraction
 from data.feature_extraction import extract_features, FEATURE_COLUMNS
 from ml_model.load_classifier import LoadClassifier
-
+from sensors.mock_sensor import MockSensor, FileSensor
 
 MODEL_PATH = os.path.join("ml_model", "model.pkl")
 
@@ -28,7 +29,7 @@ def _plot_waveforms(t: np.ndarray, v: np.ndarray, i: np.ndarray) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(10, 3.2))
     ax.plot(t, v, label="Voltage (V)")
     ax.plot(t, i, label="Current (A)")
-    ax.set_title("Simulated Voltage & Current Waveforms")
+    ax.set_title("Voltage & Current Waveforms")
     ax.set_xlabel("Time (s)")
     ax.grid(True, alpha=0.3)
     ax.legend()
@@ -49,10 +50,10 @@ def _plot_spectrum(freqs: np.ndarray, amps: np.ndarray, title: str) -> plt.Figur
 
 
 def main() -> None:
-    st.set_page_config(page_title="Smart PQ AI Analyzer (Simulation)", layout="wide")
+    st.set_page_config(page_title="Smart PQ AI Analyzer", layout="wide")
 
-    st.title("AI-Based Smart Power Quality Analyzer with Load Classification (Simulation Only)")
-    st.caption("Simulates voltage/current, injects disturbances, performs FFT-based harmonic analysis, computes PQ metrics, and classifies load type.")
+    st.title("AI-Based Smart Power Quality Analyzer")
+    st.caption("Analyzes power quality from Simulation or Real Sensors/Files.")
 
     if not os.path.exists(MODEL_PATH):
         st.error("Model file not found. Please run: python main.py (it will generate dataset and train model).")
@@ -61,67 +62,143 @@ def main() -> None:
     clf = LoadClassifier(MODEL_PATH)
 
     # Sidebar controls
-    st.sidebar.header("Simulation Controls")
+    st.sidebar.header("Configuration")
+    data_source = st.sidebar.radio("Data Source", ["Simulation", "Real Sensor / File"])
 
-    load_type = st.sidebar.selectbox(
-        "Choose TRUE load type (for simulation)",
-        ["Linear", "InductionMotor", "SMPS", "LEDDriver", "Nonlinear"],
-        index=0,
-    )
+    v = np.array([])
+    i = np.array([])
+    t = np.array([])
+    f_used = SYSTEM_FREQUENCY # Default
+    fs = 5000.0 # Default
 
-    disturbance = st.sidebar.selectbox(
-        "Disturbance",
-        ["None", "Sag", "Swell", "Harmonics", "FreqDev"],
-        index=0,
-    )
+    if data_source == "Simulation":
+        st.sidebar.header("Simulation Controls")
 
-    vrms = st.sidebar.slider("Voltage RMS (V)", 180, 260, int(NOMINAL_VOLTAGE_RMS), 1)
-    irms = st.sidebar.slider("Current RMS (A)", 3, 20, int(NOMINAL_CURRENT_RMS), 1)
+        load_type = st.sidebar.selectbox(
+            "Choose TRUE load type (for simulation)",
+            ["Linear", "InductionMotor", "SMPS", "LEDDriver", "Nonlinear"],
+            index=0,
+        )
 
-    sag = st.sidebar.slider("Sag fraction", 0.20, 0.40, 0.30, 0.01)
-    swell = st.sidebar.slider("Swell fraction", 0.20, 0.40, 0.30, 0.01)
+        disturbance = st.sidebar.selectbox(
+            "Disturbance",
+            ["None", "Sag", "Swell", "Harmonics", "FreqDev"],
+            index=0,
+        )
 
-    h3 = st.sidebar.slider("Voltage 3rd harmonic fraction", 0.00, 0.10, 0.05, 0.005)
-    h5 = st.sidebar.slider("Voltage 5th harmonic fraction", 0.00, 0.10, 0.03, 0.005)
-    h7 = st.sidebar.slider("Voltage 7th harmonic fraction", 0.00, 0.10, 0.02, 0.005)
+        vrms = st.sidebar.slider("Voltage RMS (V)", 180, 260, int(NOMINAL_VOLTAGE_RMS), 1)
+        irms = st.sidebar.slider("Current RMS (A)", 3, 20, int(NOMINAL_CURRENT_RMS), 1)
 
-    f_dev = st.sidebar.slider("Frequency (Hz)", 49.0, 51.0, float(SYSTEM_FREQUENCY), 0.1)
+        sag = st.sidebar.slider("Sag fraction", 0.20, 0.40, 0.30, 0.01)
+        swell = st.sidebar.slider("Swell fraction", 0.20, 0.40, 0.30, 0.01)
 
-    st.sidebar.markdown("---")
-    st.sidebar.write("IEEE 519 indicator based on **current THD**:")
-    st.sidebar.write("🟢 THD < 5% (Compliant), 🔴 THD ≥ 5% (Non-compliant)")
+        h3 = st.sidebar.slider("Voltage 3rd harmonic fraction", 0.00, 0.10, 0.05, 0.005)
+        h5 = st.sidebar.slider("Voltage 5th harmonic fraction", 0.00, 0.10, 0.03, 0.005)
+        h7 = st.sidebar.slider("Voltage 7th harmonic fraction", 0.00, 0.10, 0.02, 0.005)
 
-    # Generate waveforms
-    t, v = generate_voltage_wave(vrms=float(vrms), frequency_hz=SYSTEM_FREQUENCY)
+        f_dev = st.sidebar.slider("Frequency (Hz)", 49.0, 51.0, float(SYSTEM_FREQUENCY), 0.1)
 
-    if disturbance == "Sag":
-        v = apply_voltage_sag(v, sag)
-        f_used = SYSTEM_FREQUENCY
-    elif disturbance == "Swell":
-        v = apply_voltage_swell(v, swell)
-        f_used = SYSTEM_FREQUENCY
-    elif disturbance == "Harmonics":
-        v = apply_harmonic_injection(t, v, h3=h3, h5=h5, h7=h7)
-        f_used = SYSTEM_FREQUENCY
-    elif disturbance == "FreqDev":
-        v = apply_frequency_deviation(t, vrms=float(vrms), frequency_hz=float(f_dev))
-        f_used = float(f_dev)
+        st.sidebar.markdown("---")
+        st.sidebar.write("IEEE 519 indicator based on **current THD**:")
+        st.sidebar.write("🟢 THD < 5% (Compliant), 🔴 THD ≥ 5% (Non-compliant)")
+
+        # Generate waveforms
+        t, v = generate_voltage_wave(vrms=float(vrms), frequency_hz=SYSTEM_FREQUENCY)
+
+        if disturbance == "Sag":
+            v = apply_voltage_sag(v, sag)
+            f_used = SYSTEM_FREQUENCY
+        elif disturbance == "Swell":
+            v = apply_voltage_swell(v, swell)
+            f_used = SYSTEM_FREQUENCY
+        elif disturbance == "Harmonics":
+            v = apply_harmonic_injection(t, v, h3=h3, h5=h5, h7=h7)
+            f_used = SYSTEM_FREQUENCY
+        elif disturbance == "FreqDev":
+            v = apply_frequency_deviation(t, vrms=float(vrms), frequency_hz=float(f_dev))
+            f_used = float(f_dev)
+        else:
+            f_used = SYSTEM_FREQUENCY
+
+        _, i = generate_current_wave(load_type=load_type, irms=float(irms), frequency_hz=float(f_used))
+        
+        # In simulation, we know fs is fixed at config 5000 from wf generator
+        fs = 5000.0
+
     else:
-        f_used = SYSTEM_FREQUENCY
+        # Real Sensor / File
+        st.sidebar.header("Sensor Configuration")
+        sensor_type = st.sidebar.selectbox("Input Type", ["Mock Sensor (Demo)", "Upload CSV"])
+        
+        if sensor_type == "Upload CSV":
+            uploaded_file = st.sidebar.file_uploader("Upload CSV (Time, Voltage, Current)", type=["csv"])
+            if uploaded_file is not None:
+                # Save to temp file or read directly
+                # We can use our FileSensor but it takes a path. 
+                # Let's just use pandas directly here for simplicity, or save temp.
+                try:
+                    df = pd.read_csv(uploaded_file)
+                    st.sidebar.success(f"Loaded {len(df)} samples")
+                    # Assume columns 0,1,2 are T, V, I
+                    t = df.iloc[:, 0].values
+                    v = df.iloc[:, 1].values
+                    i = df.iloc[:, 2].values
+                    
+                    # Estimate fs
+                    if len(t) > 1:
+                        fs = 1.0 / np.mean(np.diff(t))
+                    else:
+                        fs = 5000.0
+                except Exception as e:
+                    st.error(f"Error reading file: {e}")
+                    st.stop()
+            else:
+                st.info("Please upload a CSV file to proceed.")
+                st.stop()
+        else:
+            # Mock Sensor
+            noise = st.sidebar.slider("Noise Level", 0.0, 0.1, 0.02)
+            sensor = MockSensor(sampling_rate=5000.0, noise_level=noise)
+            t, v, i = sensor.read_batch(n_samples=1000)
+            fs = sensor.sampling_rate
 
-    _, i = generate_current_wave(load_type=load_type, irms=float(irms), frequency_hz=float(f_used))
+        # Estimate frequency from data
+        f_est = estimate_frequency(v, fs)
+        f_used = f_est
+        st.sidebar.metric("Estimated Frequency", f"{f_est:.2f} Hz")
 
-    # Compute metrics & features
+
+    # --- Analysis & Display (Common) ---
+
+    # Compute metrics
     vr = rms(v)
     ir = rms(i)
     p = active_power(v, i)
-    s = apparent_power(vr, ir)
-    pf = power_factor(p, s)
+    s_pwr = apparent_power(vr, ir) # renamed to avoid conflict with 's' var
+    pf = power_factor(p, s_pwr)
     cf = crest_factor(i)
 
+    # Harmonics & THD
     thd_i = thd_percent(i, fundamental_hz=float(f_used))
-    hm = harmonic_magnitudes(i, fundamental_hz=float(f_used))
+    hm_i = harmonic_magnitudes(i, fundamental_hz=float(f_used))
+    
+    # Voltage Harmonics (Requested by user)
+    hm_v = harmonic_magnitudes(v, fundamental_hz=float(f_used))
+    # Normalize to fraction of fundamental if fundamental > 0
+    v_fund = hm_v['H1']
+    if v_fund > 1.0:
+        h3_v = hm_v['H3'] / v_fund
+        h5_v = hm_v['H5'] / v_fund
+        h7_v = hm_v['H7'] / v_fund
+    else:
+        h3_v, h5_v, h7_v = 0.0, 0.0, 0.0
 
+    # Sag/Swell
+    sag_swell_frac = calculate_sag_swell_fraction(vr, NOMINAL_VOLTAGE_RMS)
+    is_sag = vr < NOMINAL_VOLTAGE_RMS and sag_swell_frac > 0.05
+    is_swell = vr > NOMINAL_VOLTAGE_RMS and sag_swell_frac > 0.05
+
+    # Feature Extraction & Prediction
     feats = extract_features(v, i, fundamental_hz=float(f_used))
     pred = clf.predict(feats)
 
@@ -141,39 +218,61 @@ def main() -> None:
         st.pyplot(fig_s, use_container_width=True)
 
     with right:
-        st.subheader("Power Quality Summary")
+        st.subheader("Power Quality Metrics")
 
         c1, c2 = st.columns(2)
         c1.metric("Vrms (V)", f"{vr:.2f}")
         c2.metric("Irms (A)", f"{ir:.2f}")
 
         c3, c4 = st.columns(2)
-        c3.metric("Power Factor", f"{pf:.3f}")
-        c4.metric("Crest Factor (I)", f"{cf:.3f}")
-
-        st.metric("Current THD (%)", f"{thd_i:.2f}")
+        c3.metric("Freq (Hz)", f"{f_used:.2f}")
+        c4.metric("PF", f"{pf:.3f}")
 
         st.markdown("---")
-        st.subheader("Harmonics (Current)")
-        st.write(f"H3 magnitude: **{hm['H3']:.3f}**")
-        st.write(f"H5 magnitude: **{hm['H5']:.3f}**")
-        st.write(f"H7 magnitude: **{hm['H7']:.3f}**")
+        st.write("**Sag / Swell Analysis**")
+        c5, c6 = st.columns(2)
+        
+        if is_sag:
+             c5.metric("Sag Fraction", f"{sag_swell_frac:.2f}", delta="-SAG", delta_color="inverse")
+        elif is_swell:
+             c5.metric("Swell Fraction", f"{sag_swell_frac:.2f}", delta="+SWELL", delta_color="inverse")
+        else:
+             c5.metric("Sag/Swell", "Normal")
+             
+        c6.metric("Crest Factor (I)", f"{cf:.3f}")
+
+        st.markdown("---")
+        st.subheader("Harmonics")
+        
+        tab1, tab2 = st.tabs(["Current (Abs)", "Voltage (Fraction)"])
+        
+        with tab1:
+            st.write(f"**Current THD:** {thd_i:.2f}%")
+            st.write(f"H3: **{hm_i['H3']:.3f} A**")
+            st.write(f"H5: **{hm_i['H5']:.3f} A**")
+            st.write(f"H7: **{hm_i['H7']:.3f} A**")
+            
+        with tab2:
+            st.write(f"**Voltage Harmonics (Fraction of Fundamental)**")
+            st.write(f"H3 Fraction: **{h3_v:.3f}**")
+            st.write(f"H5 Fraction: **{h5_v:.3f}**")
+            st.write(f"H7 Fraction: **{h7_v:.3f}**")
 
         st.markdown("---")
         st.subheader("AI Load Classification")
         st.write(f"**Predicted Load Type:** `{pred}`")
-        st.caption(f"True simulated load type: {load_type} | Disturbance: {disturbance}")
+        if data_source == "Simulation":
+            st.caption(f"True Load: {load_type} | Disturbance: {disturbance}")
 
         st.markdown("---")
-        st.subheader("IEEE 519 Indicator (THD)")
+        st.subheader("IEEE 519 Compliance")
         if compliant:
-            st.success("🟢 Compliant: THD < 5%")
+            st.success("🟢 Compliant (THD < 5%)")
         else:
-            st.error("🔴 Non-compliant: THD ≥ 5%")
+            st.error("🔴 Non-compliant (THD ≥ 5%)")
 
-        st.markdown("---")
-        st.subheader("Feature Vector Used")
-        st.dataframe({k: [float(feats[k])] for k in FEATURE_COLUMNS}, use_container_width=True)
+        with st.expander("View Feature Vector"):
+            st.dataframe({k: [float(feats[k])] for k in FEATURE_COLUMNS}, use_container_width=True)
 
 
 if __name__ == "__main__":

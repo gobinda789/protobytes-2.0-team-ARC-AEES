@@ -22,6 +22,7 @@ def generate_voltage_wave(
     vrms: float = NOMINAL_VOLTAGE_RMS,
     frequency_hz: float = SYSTEM_FREQUENCY,
     phase_rad: float = 0.0,
+    time_array: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generate a clean sinusoidal voltage waveform.
 
@@ -29,15 +30,21 @@ def generate_voltage_wave(
         vrms: Desired RMS voltage.
         frequency_hz: System frequency (Hz).
         phase_rad: Phase shift (rad).
+        time_array: Optional custom time array. If None, uses default from config.
 
     Returns:
         t: Time axis (s).
         v: Voltage samples (V).
     """
-    t = _time_axis()
+    if time_array is not None:
+        t = time_array
+    else:
+        t = _time_axis()
+        
     v_peak = vrms * np.sqrt(2.0)
     v = v_peak * np.sin(2.0 * np.pi * frequency_hz * t + phase_rad)
     return t, v
+
 
 
 def generate_current_wave(
@@ -45,6 +52,7 @@ def generate_current_wave(
     irms: float = NOMINAL_CURRENT_RMS,
     frequency_hz: float = SYSTEM_FREQUENCY,
     base_phase_rad: float | None = None,
+    time_array: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generate a current waveform according to load type.
 
@@ -60,12 +68,16 @@ def generate_current_wave(
         irms: Target RMS current.
         frequency_hz: Fundamental frequency (Hz).
         base_phase_rad: Optional phase relative to voltage. If None, chosen by load type.
+        time_array: Optional custom time array. If None, uses default from config.
 
     Returns:
         t: Time axis (s).
         i: Current samples (A), scaled to target RMS.
     """
-    t = _time_axis()
+    if time_array is not None:
+        t = time_array
+    else:
+        t = _time_axis()
 
     # Choose default phase shifts (typical behaviors)
     if base_phase_rad is None:

@@ -87,3 +87,56 @@ def thd_percent(
         return 0.0
     num = np.sqrt(mags["H3"] ** 2 + mags["H5"] ** 2 + mags["H7"] ** 2)
     return float((num / h1) * 100.0)
+
+
+def estimate_frequency(x: np.ndarray, fs: float) -> float:
+    """Estimate fundamental frequency using FFT peak.
+
+    Args:
+        x: Input signal (1D array)
+        fs: Sampling rate (Hz)
+
+    Returns:
+        Estimated frequency (Hz)
+    """
+    x = np.asarray(x)
+    n = x.size
+    window = _hann_window(n)
+    xw = x * window
+    
+    # Use rFFT
+    X = np.abs(np.fft.rfft(xw))
+    freqs = np.fft.rfftfreq(n, d=1.0 / fs)
+    
+    # Ignore DC component
+    X[0] = 0
+    
+    
+    # Find peak index
+    idx = np.argmax(X)
+    
+    # Parabolic interpolation for better accuracy
+    # If peak is at boundaries, just return it
+    if idx == 0 or idx == len(X) - 1:
+        return float(freqs[idx])
+        
+    y_vals = X[idx-1 : idx+2]
+    # Parabolic peak shift: d = 0.5 * (alpha - gamma) / (alpha - 2*beta + gamma)
+    # where alpha=y[idx-1], beta=y[idx], gamma=y[idx+1]
+    alpha = y_vals[0]
+    beta = y_vals[1]
+    gamma = y_vals[2]
+    
+    denom = alpha - 2 * beta + gamma
+    if denom == 0:
+        return float(freqs[idx])
+        
+    d = 0.5 * (alpha - gamma) / denom
+    
+    # k_peak = idx + d
+    bin_width = freqs[1] - freqs[0]
+    f_est = freqs[idx] + d * bin_width
+    
+    return float(f_est)
+
+
