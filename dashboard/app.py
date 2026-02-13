@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import os
+import sys
+
+# Add parent directory to path to allow importing config and signal_processing
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -204,6 +209,32 @@ def main() -> None:
 
     compliant = thd_i < 5.0
 
+    # Diagnosis Logic
+    # Estimate phase shift from PF. 
+    # PF = cos(phi), so |phi| = arccos(PF).
+    # We don't have sign from just PF, but we can assume lagging for now or try to extract from data if needed.
+    # For now, let's just use the scalar values.
+    # In simulation, we know if we injected a phase shift (we didn't explicitly, but load type implicitly does).
+    # Let's just pass a dummy phase shift or estimate it.
+    try:
+        phi_rad = np.arccos(np.clip(pf, -1.0, 1.0))
+        phi_deg = np.degrees(phi_rad)
+        # Rudimentary check for lead/lag if we had instantaneous data, but here we just take magnitude
+        # or assume lagging for inductive loads (most common).
+        # The diagnosis logic uses phase_shift > 5.
+    except:
+        phi_deg = 0.0
+
+    from signal_processing.power_analysis import diagnose_power_quality
+    diagnosis = diagnose_power_quality(
+        vrms=vr,
+        irms=ir,
+        thd_i=thd_i,
+        pf=pf,
+        phase_shift=phi_deg,
+        nominal_v=NOMINAL_VOLTAGE_RMS
+    )
+
     # Layout
     left, right = st.columns([1.15, 0.85], gap="large")
 
@@ -273,6 +304,23 @@ def main() -> None:
 
         with st.expander("View Feature Vector"):
             st.dataframe({k: [float(feats[k])] for k in FEATURE_COLUMNS}, use_container_width=True)
+
+    # --- New Section: Smart Doctor Diagnosis ---
+    st.markdown("---")
+    st.header("🩺 Smart Doctor Diagnosis")
+    
+    # Color-code status
+    status_color = "green"
+    if diagnosis.status == "Warning":
+        status_color = "orange"
+    elif diagnosis.status == "Critical":
+        status_color = "red"
+
+    st.markdown(f"**Status:** :{status_color}[{diagnosis.status}]")
+    st.markdown(f"**Fault Type:** {diagnosis.fault_type}")
+    st.markdown(f"**Source:** {diagnosis.fault_source}")
+    
+    st.info(f"**💡 Engineering Recommendation:**\n\n{diagnosis.recommendation}")
 
 
 if __name__ == "__main__":
