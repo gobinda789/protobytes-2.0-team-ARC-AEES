@@ -8,7 +8,10 @@ Features required:
 - H3 magnitude
 - H5 magnitude
 - H7 magnitude
+- H11 magnitude
+- H13 magnitude
 - Crest factor
+- InrushRatio (peak / RMS – high during startup)
 """
 
 from __future__ import annotations
@@ -28,7 +31,10 @@ FEATURE_COLUMNS = [
     "H3_mag",
     "H5_mag",
     "H7_mag",
+    "H11_mag",
+    "H13_mag",
     "CrestFactor_I",
+    "InrushRatio",
 ]
 
 
@@ -45,6 +51,10 @@ def extract_features(v: np.ndarray, i: np.ndarray, fundamental_hz: float = SYSTE
     thd = thd_percent(i, fundamental_hz)
     cf = crest_factor(i)
 
+    # Inrush ratio: peak current / RMS current
+    i_peak = float(np.max(np.abs(i)))
+    inrush_ratio = i_peak / ir if ir > 1e-12 else 0.0
+
     return {
         "Vrms": float(vr),
         "Irms": float(ir),
@@ -53,5 +63,8 @@ def extract_features(v: np.ndarray, i: np.ndarray, fundamental_hz: float = SYSTE
         "H3_mag": float(hm["H3"]),
         "H5_mag": float(hm["H5"]),
         "H7_mag": float(hm["H7"]),
+        "H11_mag": float(hm.get("H11", 0.0)),
+        "H13_mag": float(hm.get("H13", 0.0)),
         "CrestFactor_I": float(cf),
+        "InrushRatio": float(inrush_ratio),
     }

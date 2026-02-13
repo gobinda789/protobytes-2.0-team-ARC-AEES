@@ -66,7 +66,7 @@ def harmonic_magnitudes(
     """
     freqs, amps = compute_spectrum(x)
     h = {}
-    for k in (1, 3, 5, 7):
+    for k in (1, 3, 5, 7, 11, 13):
         idx = _nearest_bin(freqs, k * fundamental_hz)
         h[f"H{k}"] = float(amps[idx])
     return h
@@ -85,7 +85,13 @@ def thd_percent(
     h1 = mags["H1"]
     if h1 <= 1e-12:
         return 0.0
-    num = np.sqrt(mags["H3"] ** 2 + mags["H5"] ** 2 + mags["H7"] ** 2)
+    num = np.sqrt(
+        mags["H3"] ** 2 
+        + mags["H5"] ** 2 
+        + mags["H7"] ** 2
+        + mags.get("H11", 0.0) ** 2
+        + mags.get("H13", 0.0) ** 2
+    )
     return float((num / h1) * 100.0)
 
 

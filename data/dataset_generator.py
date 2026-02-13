@@ -3,6 +3,7 @@
 Generates labeled samples by simulating:
 - a load type (drives current waveform shape)
 - a disturbance on voltage (sag/swell/harmonics/frequency deviation/none)
+- optional inrush current event
 
 Then extracts power-quality + harmonic features and saves to CSV.
 """
@@ -19,7 +20,7 @@ from config import (
     NOMINAL_VOLTAGE_RMS,
     NOMINAL_CURRENT_RMS,
 )
-from signal_processing.waveform_generator import generate_voltage_wave, generate_current_wave
+from signal_processing.waveform_generator import generate_voltage_wave, generate_current_wave, LOAD_TYPES
 from signal_processing.disturbances import (
     apply_voltage_sag,
     apply_voltage_swell,
@@ -29,7 +30,6 @@ from signal_processing.disturbances import (
 from data.feature_extraction import FEATURE_COLUMNS, extract_features
 
 
-LOAD_TYPES = ["Linear", "InductionMotor", "SMPS", "LEDDriver", "Nonlinear"]
 DISTURBANCES = ["None", "Sag", "Swell", "Harmonics", "FreqDev"]
 
 
@@ -37,6 +37,7 @@ DISTURBANCES = ["None", "Sag", "Swell", "Harmonics", "FreqDev"]
 class SampleConfig:
     load_type: str
     disturbance: str
+    inrush: bool = False
     sag_fraction: float | None = None
     swell_fraction: float | None = None
     h3: float | None = None
@@ -48,24 +49,29 @@ class SampleConfig:
 def _random_sample_config(rng: np.random.Generator) -> SampleConfig:
     """Create a random sample configuration within required ranges."""
     load = rng.choice(LOAD_TYPES)
-    dist = rng.choice(DISTURBANCES, p=[0.35, 0.20, 0.15, 0.20, 0.10])  # bias to none/sag/harmonics
+    dist = rng.choice(DISTURBANCES, p=[0.35, 0.20, 0.15, 0.20, 0.10])
+
+    # ~20% chance of inrush event for motor-type loads
+    inrush = False
+    if load in ("InductionMotor", "Elevator", "AC", "Cooler", "Fan"):
+        inrush = bool(rng.random() < 0.20)
 
     if dist == "Sag":
-        return SampleConfig(load, dist, sag_fraction=float(rng.uniform(0.20, 0.40)))
+        return SampleConfig(load, dist, inrush=inrush, sag_fraction=float(rng.uniform(0.20, 0.40)))
     if dist == "Swell":
-        return SampleConfig(load, dist, swell_fraction=float(rng.uniform(0.20, 0.40)))
+        return SampleConfig(load, dist, inrush=inrush, swell_fraction=float(rng.uniform(0.20, 0.40)))
     if dist == "Harmonics":
-        # Inject modest voltage harmonics (not too large)
         return SampleConfig(
             load,
             dist,
+            inrush=inrush,
             h3=float(rng.uniform(0.02, 0.08)),
             h5=float(rng.uniform(0.01, 0.06)),
             h7=float(rng.uniform(0.01, 0.05)),
         )
     if dist == "FreqDev":
-        return SampleConfig(load, dist, freq_hz=float(rng.uniform(SYSTEM_FREQUENCY - 1.0, SYSTEM_FREQUENCY + 1.0)))
-    return SampleConfig(load, "None")
+        return SampleConfig(load, dist, inrush=inrush, freq_hz=float(rng.uniform(SYSTEM_FREQUENCY - 1.0, SYSTEM_FREQUENCY + 1.0)))
+    return SampleConfig(load, "None", inrush=inrush)
 
 
 def generate_one_sample(rng: np.random.Generator) -> tuple[dict[str, float], SampleConfig]:
@@ -76,7 +82,7 @@ def generate_one_sample(rng: np.random.Generator) -> tuple[dict[str, float], Sam
     vrms = float(rng.uniform(0.92, 1.08) * NOMINAL_VOLTAGE_RMS)
     irms = float(rng.uniform(0.70, 1.25) * NOMINAL_CURRENT_RMS)
 
-    # Voltage: base sine at nominal frequency (or deviated)
+    # Voltage: base sine at nominal frequency
     t, v = generate_voltage_wave(vrms=vrms, frequency_hz=SYSTEM_FREQUENCY)
 
     # Apply disturbance to voltage
@@ -87,12 +93,11 @@ def generate_one_sample(rng: np.random.Generator) -> tuple[dict[str, float], Sam
     elif cfg.disturbance == "Harmonics":
         v = apply_harmonic_injection(t, v, h3=cfg.h3 or 0.05, h5=cfg.h5 or 0.03, h7=cfg.h7 or 0.02)
     elif cfg.disturbance == "FreqDev":
-        # Frequency deviation regenerates the base sine at different f
         v = apply_frequency_deviation(t, vrms=vrms, frequency_hz=cfg.freq_hz or SYSTEM_FREQUENCY)
 
-    # Current waveform depends on load type, and uses same frequency as voltage in case of freq deviation
+    # Current waveform depends on load type
     f_i = cfg.freq_hz if cfg.disturbance == "FreqDev" and cfg.freq_hz is not None else SYSTEM_FREQUENCY
-    _, i = generate_current_wave(load_type=cfg.load_type, irms=irms, frequency_hz=float(f_i))
+    _, i = generate_current_wave(load_type=cfg.load_type, irms=irms, frequency_hz=float(f_i), inrush=cfg.inrush)
 
     feats = extract_features(v, i, fundamental_hz=float(f_i))
     return feats, cfg
@@ -100,7 +105,7 @@ def generate_one_sample(rng: np.random.Generator) -> tuple[dict[str, float], Sam
 
 def generate_dataset(
     out_csv_path: str,
-    n_samples: int = 900,
+    n_samples: int = 1500,
     seed: int = 42,
 ) -> pd.DataFrame:
     """Generate and save dataset to CSV.

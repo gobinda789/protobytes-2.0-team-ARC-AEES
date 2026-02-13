@@ -27,20 +27,20 @@ MODEL_PATH = os.path.join("ml_model", "model.pkl")
 
 
 def ensure_dataset() -> None:
-    """Generate dataset CSV if it doesn't exist."""
+    """Generate dataset CSV (always regenerate to pick up new features/load types)."""
     if os.path.exists(DATASET_CSV):
-        print(f"[MAIN] Dataset exists: {DATASET_CSV}")
-        return
+        os.remove(DATASET_CSV)
+        print("[MAIN] Removed old dataset.")
     print("[MAIN] Generating dataset...")
-    generate_dataset(DATASET_CSV, n_samples=900, seed=42)
+    generate_dataset(DATASET_CSV, n_samples=1500, seed=42)
     print(f"[MAIN] Dataset saved: {DATASET_CSV}")
 
 
 def ensure_model() -> None:
-    """Train model if it doesn't exist."""
+    """Train model (always retrain to match new features/classes)."""
     if os.path.exists(MODEL_PATH):
-        print(f"[MAIN] Model exists: {MODEL_PATH}")
-        return
+        os.remove(MODEL_PATH)
+        print("[MAIN] Removed old model.")
     print("[MAIN] Training model...")
     train_and_save(DATASET_CSV, MODEL_PATH, random_state=7)
     print(f"[MAIN] Model saved: {MODEL_PATH}")
