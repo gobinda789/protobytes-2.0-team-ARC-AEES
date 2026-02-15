@@ -70,6 +70,17 @@ This project is a **simulation-based smart power quality analyzer** that:
 
 ---
 
+## ⚡ Power Quality Analysis Dashboard
+![Dashboard](assets/System_SC_1.png)
+
+## 🤖 AI-Based Load Diagnosis & Recommendation Engine
+![Diagnosis](assets/System_SC_2.png)
+
+## 🔌 Experimental Hardware Setup for Data Acquisition
+![Hardware Setup](assets/component_setup.png)
+
+---
+
 ## 🚀 Installation & Setup
 
 ### 1️⃣ Clone the Repository
