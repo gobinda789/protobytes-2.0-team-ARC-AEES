@@ -1,4 +1,5 @@
-# ⚡ AI-Based Smart Power Quality Analyzer with Load Classification (Simulation Only)
+# ⚡Smart Power Quality Analyzer (AI Load Classification)
+
 
 ---
 
