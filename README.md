@@ -2,29 +2,10 @@
 
 ---
 
-## 👥 Team Information
-
-### 🏷 Team Name  
-**ARC / AEES**
-
-### 👨‍💻 Team Members
-
-| Name | Email | GitHub |
-|------|-------|--------|
-| Govinda Bhandari | govinda.078bei021@acem.edu.np | https://github.com/gobinda789 |
-| Anish Ghimire | anish.078bei008@acem.edu.np | https://github.com/itsmeanish13 |
-| Prabhu Shah | prabhu.078bel008@acem.edu.np | — |
-| Krishna Dhimal | krishna.078bel005@acem.edu.np | — |
-
----
-
 ## 📌 Project Details
 
 ### 🏷 Project Title  
 **AI-Based Smart Power Quality Analyzer with Load Classification (Simulation Only)**
-
-### 🗂 Category  
-**IoT / Open Innovation**
 
 ---
 
@@ -93,4 +74,4 @@ This project is a **simulation-based smart power quality analyzer** that:
 ### 1️⃣ Clone the Repository
 ```bash
 git clone https://github.com/gobinda789/protobytes-2.0-team-ARC-AEES
-cd Smart_PQ_AI
+
