@@ -6,7 +6,7 @@
 ## 📌 Project Details
 
 ### 🏷 Project Title  
-**AI-Based Smart Power Quality Analyzer with Load Classification (Simulation Only)**
+**AI-Based Smart Power Quality Analyzer with Load Classification **
 
 ---
 
