@@ -85,5 +85,5 @@ This project is a **simulation-based smart power quality analyzer** that:
 
 ### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/gobinda789/protobytes-2.0-team-ARC-AEES
+git clone https://github.com/gobinda789/Smart-Power-Quality-Analyzer-AI-Load-Classification/edit/main/README.md
 
